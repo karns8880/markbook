@@ -73,6 +73,15 @@ type Category = {
   name: string
 }
 
+type SessionUser = {
+  id: string
+  email: string
+}
+
+type SupabaseBrowserClient = NonNullable<
+  ReturnType<typeof createSupabaseClient>
+>
+
 const defaultCategories: Category[] = []
 const defaultVaultItems: VaultItem[] = []
 
@@ -86,20 +95,34 @@ export default function Page() {
   const [status, setStatus] = React.useState("")
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(false)
-  const [sessionEmail, setSessionEmail] = React.useState<string | null>(null)
+  const [sessionUser, setSessionUser] = React.useState<SessionUser | null>(null)
   const [pointer, setPointer] = React.useState({ x: 0, y: 0 })
 
   React.useEffect(() => {
     if (!supabase) return
 
     supabase.auth.getUser().then(({ data }) => {
-      setSessionEmail(data.user?.email ?? null)
+      setSessionUser(
+        data.user
+          ? {
+              id: data.user.id,
+              email: data.user.email ?? "",
+            }
+          : null
+      )
     })
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSessionEmail(session?.user.email ?? null)
+      setSessionUser(
+        session?.user
+          ? {
+              id: session.user.id,
+              email: session.user.email ?? "",
+            }
+          : null
+      )
     })
 
     return () => subscription.unsubscribe()
@@ -211,8 +234,14 @@ export default function Page() {
     "--my": pointer.y.toFixed(3),
   }
 
-  if (sessionEmail) {
-    return <Dashboard email={sessionEmail} onSignOut={handleSignOut} />
+  if (sessionUser && supabase) {
+    return (
+      <Dashboard
+        supabase={supabase}
+        user={sessionUser}
+        onSignOut={handleSignOut}
+      />
+    )
   }
 
   return (
@@ -368,19 +397,101 @@ export default function Page() {
 }
 
 function Dashboard({
-  email,
+  supabase,
+  user,
   onSignOut,
 }: {
-  email: string
+  supabase: SupabaseBrowserClient
+  user: SessionUser
   onSignOut: () => void
 }) {
   const [categories, setCategories] = React.useState(defaultCategories)
   const [vaultItems, setVaultItems] = React.useState(defaultVaultItems)
   const [newCategory, setNewCategory] = React.useState("")
   const [selectedCategoryId, setSelectedCategoryId] = React.useState("")
+  const [credentialTitle, setCredentialTitle] = React.useState("")
+  const [credentialUsername, setCredentialUsername] = React.useState("")
+  const [credentialUrl, setCredentialUrl] = React.useState("")
+  const [credentialPassword, setCredentialPassword] = React.useState("")
+  const [dashboardError, setDashboardError] = React.useState("")
+  const [dashboardStatus, setDashboardStatus] = React.useState("")
+  const [loadingVault, setLoadingVault] = React.useState(true)
+  const [savingCategory, setSavingCategory] = React.useState(false)
+  const [savingCredential, setSavingCredential] = React.useState(false)
 
-  function handleCreateCategory(event: React.FormEvent<HTMLFormElement>) {
+  const loadVaultData = React.useCallback(async () => {
+    setDashboardError("")
+    setLoadingVault(true)
+
+    const [categoriesResult, credentialsResult] = await Promise.all([
+      supabase
+        .from("vault_categories")
+        .select("id, name")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("vault_credentials")
+        .select(
+          "id, title, username, website_url, updated_at, category_id, vault_categories(name)"
+        )
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false }),
+    ])
+
+    if (categoriesResult.error) {
+      setDashboardError(categoriesResult.error.message)
+      setLoadingVault(false)
+      return
+    }
+
+    if (credentialsResult.error) {
+      setDashboardError(credentialsResult.error.message)
+      setLoadingVault(false)
+      return
+    }
+
+    const nextCategories = (categoriesResult.data ?? []).map((category) => ({
+      id: String(category.id),
+      name: String(category.name),
+    }))
+
+    const nextVaultItems = (credentialsResult.data ?? []).map((credential) => {
+      const categoryData = credential.vault_categories as
+        | { name?: string | null }
+        | { name?: string | null }[]
+        | null
+      const categoryName = Array.isArray(categoryData)
+        ? categoryData[0]?.name
+        : categoryData?.name
+
+      return {
+        id: String(credential.id),
+        title: String(credential.title),
+        username: credential.username ? String(credential.username) : "",
+        url: credential.website_url ? String(credential.website_url) : "",
+        updatedAt: formatUpdatedAt(String(credential.updated_at)),
+        categoryId: credential.category_id
+          ? String(credential.category_id)
+          : "",
+        categoryName: categoryName ?? "Uncategorized",
+        strength: "Strong" as const,
+      }
+    })
+
+    setCategories(nextCategories)
+    setVaultItems(nextVaultItems)
+    setSelectedCategoryId((current) => current || nextCategories[0]?.id || "")
+    setLoadingVault(false)
+  }, [supabase, user.id])
+
+  React.useEffect(() => {
+    loadVaultData()
+  }, [loadVaultData])
+
+  async function handleCreateCategory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setDashboardError("")
+    setDashboardStatus("")
 
     const category = newCategory.trim()
     if (!category) return
@@ -395,17 +506,63 @@ function Dashboard({
       return
     }
 
-    const nextCategory = {
-      id: crypto.randomUUID(),
-      name: category,
+    setSavingCategory(true)
+
+    const { data, error } = await supabase
+      .from("vault_categories")
+      .insert({
+        user_id: user.id,
+        name: category,
+      })
+      .select("id, name")
+      .single()
+
+    setSavingCategory(false)
+
+    if (error) {
+      setDashboardError(error.message)
+      return
     }
 
-    setCategories((current) => [...current, nextCategory])
-    setSelectedCategoryId(nextCategory.id)
-    setNewCategory("")
+    if (data) {
+      const nextCategory = {
+        id: String(data.id),
+        name: String(data.name),
+      }
+
+      setCategories((current) => [...current, nextCategory])
+      setSelectedCategoryId(nextCategory.id)
+      setNewCategory("")
+      setDashboardStatus("Category created.")
+    }
   }
 
-  function handleDeleteCategory(categoryId: string) {
+  async function handleDeleteCategory(categoryId: string) {
+    setDashboardError("")
+    setDashboardStatus("")
+
+    const { error: credentialsError } = await supabase
+      .from("vault_credentials")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("category_id", categoryId)
+
+    if (credentialsError) {
+      setDashboardError(credentialsError.message)
+      return
+    }
+
+    const { error: categoryError } = await supabase
+      .from("vault_categories")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("id", categoryId)
+
+    if (categoryError) {
+      setDashboardError(categoryError.message)
+      return
+    }
+
     const nextCategories = categories.filter((item) => item.id !== categoryId)
     setCategories(nextCategories)
     setVaultItems((current) =>
@@ -414,6 +571,69 @@ function Dashboard({
 
     if (selectedCategoryId === categoryId) {
       setSelectedCategoryId(nextCategories[0]?.id ?? "")
+    }
+
+    setDashboardStatus("Category and its credentials deleted.")
+  }
+
+  async function handleCreateCredential(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault()
+    setDashboardError("")
+    setDashboardStatus("")
+
+    const title = credentialTitle.trim()
+    const username = credentialUsername.trim()
+    const websiteUrl = credentialUrl.trim()
+    const accountPassword = credentialPassword.trim()
+
+    if (!title || !accountPassword || !selectedCategoryId) return
+
+    const selectedCategory = categories.find(
+      (category) => category.id === selectedCategoryId
+    )
+
+    setSavingCredential(true)
+
+    const { data, error } = await supabase
+      .from("vault_credentials")
+      .insert({
+        user_id: user.id,
+        category_id: selectedCategoryId,
+        title,
+        username,
+        website_url: websiteUrl,
+        password_encrypted: accountPassword,
+      })
+      .select("id, title, username, website_url, updated_at, category_id")
+      .single()
+
+    setSavingCredential(false)
+
+    if (error) {
+      setDashboardError(error.message)
+      return
+    }
+
+    if (data) {
+      const nextCredential = {
+        id: String(data.id),
+        title: String(data.title),
+        username: data.username ? String(data.username) : "",
+        url: data.website_url ? String(data.website_url) : "",
+        updatedAt: formatUpdatedAt(String(data.updated_at)),
+        categoryId: data.category_id ? String(data.category_id) : "",
+        categoryName: selectedCategory?.name ?? "Uncategorized",
+        strength: "Strong" as const,
+      }
+
+      setVaultItems((current) => [nextCredential, ...current])
+      setCredentialTitle("")
+      setCredentialUsername("")
+      setCredentialUrl("")
+      setCredentialPassword("")
+      setDashboardStatus("Credential saved.")
     }
   }
 
@@ -438,7 +658,7 @@ function Dashboard({
               <h1 className="font-heading text-2xl font-semibold tracking-tight">
                 MarkBook
               </h1>
-              <p className="text-sm text-muted-foreground">{email}</p>
+              <p className="text-sm text-muted-foreground">{user.email}</p>
             </div>
           </div>
 
@@ -470,13 +690,19 @@ function Dashboard({
                     onChange={(event) => setNewCategory(event.target.value)}
                     placeholder="New category"
                     aria-label="New category"
+                    disabled={savingCategory}
                   />
                   <Button
                     type="submit"
                     size="icon"
                     aria-label="Create category"
+                    disabled={savingCategory || !newCategory.trim()}
                   >
-                    <RiAddLine className="size-4" />
+                    {savingCategory ? (
+                      <RiLoader4Line className="size-4 animate-spin" />
+                    ) : (
+                      <RiAddLine className="size-4" />
+                    )}
                   </Button>
                 </form>
 
@@ -571,7 +797,14 @@ function Dashboard({
 
             <Card className="overflow-hidden py-0">
               <CardContent className="p-0">
-                {vaultItems.length > 0 ? (
+                {loadingVault ? (
+                  <div className="grid min-h-64 place-items-center px-6 py-12 text-center text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-2">
+                      <RiLoader4Line className="size-4 animate-spin" />
+                      Loading vault...
+                    </span>
+                  </div>
+                ) : vaultItems.length > 0 ? (
                   <div className="divide-y divide-border">
                     {vaultItems.map((item) => (
                       <VaultRow key={item.id} item={item} />
@@ -623,52 +856,98 @@ function Dashboard({
               <CardHeader>
                 <CardTitle className="text-base">New credential</CardTitle>
                 <CardDescription>
-                  The next step is saving these fields to Supabase.
+                  Save account credentials to Supabase.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3">
-                <Input placeholder="Website or app" />
-                <Input placeholder="Username or email" />
-                <Input placeholder="Password" type="password" />
-                <div className="grid gap-2">
-                  <Label htmlFor="credential-category">Category</Label>
-                  <Select
-                    value={selectedCategoryId}
-                    onValueChange={(value) => {
-                      if (value) setSelectedCategoryId(value)
-                    }}
-                    disabled={categories.length === 0}
-                  >
-                    <SelectTrigger
-                      id="credential-category"
-                      className="h-10 w-full"
+              <CardContent>
+                <form className="grid gap-3" onSubmit={handleCreateCredential}>
+                  <Input
+                    value={credentialTitle}
+                    onChange={(event) => setCredentialTitle(event.target.value)}
+                    placeholder="Website or app"
+                    required
+                  />
+                  <Input
+                    value={credentialUsername}
+                    onChange={(event) =>
+                      setCredentialUsername(event.target.value)
+                    }
+                    placeholder="Username or email"
+                  />
+                  <Input
+                    value={credentialUrl}
+                    onChange={(event) => setCredentialUrl(event.target.value)}
+                    placeholder="URL"
+                    type="url"
+                  />
+                  <Input
+                    value={credentialPassword}
+                    onChange={(event) =>
+                      setCredentialPassword(event.target.value)
+                    }
+                    placeholder="Password"
+                    type="password"
+                    required
+                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="credential-category">Category</Label>
+                    <Select
+                      value={selectedCategoryId}
+                      onValueChange={(value) => {
+                        if (value) setSelectedCategoryId(value)
+                      }}
+                      disabled={categories.length === 0}
                     >
-                      <SelectValue placeholder="Choose category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button disabled={!selectedCategoryId}>
-                  <RiAddLine className="size-4" />
-                  Save credential
-                </Button>
-                {selectedCategoryName ? (
-                  <p className="text-xs text-muted-foreground">
-                    Saving into {selectedCategoryName}.
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Create a category before saving credentials.
-                  </p>
-                )}
+                      <SelectTrigger
+                        id="credential-category"
+                        className="h-10 w-full"
+                      >
+                        <SelectValue placeholder="Choose category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !selectedCategoryId ||
+                      !credentialTitle.trim() ||
+                      !credentialPassword.trim() ||
+                      savingCredential
+                    }
+                  >
+                    {savingCredential ? (
+                      <RiLoader4Line className="size-4 animate-spin" />
+                    ) : (
+                      <RiAddLine className="size-4" />
+                    )}
+                    Save credential
+                  </Button>
+                  {selectedCategoryName ? (
+                    <p className="text-xs text-muted-foreground">
+                      Saving into {selectedCategoryName}.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Create a category before saving credentials.
+                    </p>
+                  )}
+                </form>
               </CardContent>
             </Card>
+
+            {dashboardError ? (
+              <p className="text-sm text-destructive">{dashboardError}</p>
+            ) : null}
+            {dashboardStatus ? (
+              <p className="text-sm text-muted-foreground">{dashboardStatus}</p>
+            ) : null}
           </aside>
         </div>
       </section>
@@ -727,6 +1006,19 @@ function Stat({ label, value }: { label: string; value: string }) {
       <span className="font-semibold">{value}</span>
     </div>
   )
+}
+
+function formatUpdatedAt(value: string) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return "Just now"
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "2-digit",
+  }).format(date)
 }
 
 function AnimatedCharacters() {
