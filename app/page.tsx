@@ -675,6 +675,9 @@ function Dashboard({
   const selectedCategoryName =
     categories.find((category) => category.id === selectedCategoryId)?.name ??
     ""
+  const visibleVaultItems = selectedCategoryId
+    ? vaultItems.filter((item) => item.categoryId === selectedCategoryId)
+    : []
 
   function handleCredentialDialogOpenChange(open: boolean) {
     setCredentialDialogOpen(open)
@@ -985,9 +988,9 @@ function Dashboard({
                       Loading vault...
                     </span>
                   </div>
-                ) : vaultItems.length > 0 ? (
+                ) : visibleVaultItems.length > 0 ? (
                   <div className="divide-y divide-border">
-                    {vaultItems.map((item) => (
+                    {visibleVaultItems.map((item) => (
                       <VaultRow key={item.id} item={item} />
                     ))}
                   </div>
@@ -999,8 +1002,9 @@ function Dashboard({
                       </div>
                       <h3 className="font-medium">No credentials yet</h3>
                       <p className="text-sm text-muted-foreground">
-                        Create a category first, then save account credentials
-                        into that category.
+                        {selectedCategoryName
+                          ? `No credentials saved in ${selectedCategoryName}.`
+                          : "Create a category first, then save account credentials into that category."}
                       </p>
                     </div>
                   </div>
