@@ -64,9 +64,9 @@ svg {
 }
 
 .lock-view {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
-  gap: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 100vh;
   padding: 24px;
 }
@@ -178,8 +178,40 @@ svg {
 }
 
 .auth-panel {
-  align-self: center;
+  width: min(100%, 408px);
   padding: 28px;
+}
+
+.auth-header {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.auth-logo {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-soft);
+}
+
+.auth-logo svg {
+  width: 24px;
+  height: 24px;
+}
+
+.auth-header p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .eyebrow {
@@ -690,22 +722,12 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
-  .lock-view,
   .workspace {
     grid-template-columns: 1fr;
   }
 
   .lock-view {
     padding: 16px;
-  }
-
-  .brand-panel {
-    min-height: 44vh;
-    padding: 28px;
-  }
-
-  .brand-mark {
-    margin-bottom: 48px;
   }
 
   .topbar {

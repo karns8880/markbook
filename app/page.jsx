@@ -410,25 +410,13 @@ export default function Home() {
   if (!isUnlocked) {
     return (
       <main className="lock-view">
-        <div className="brand-panel">
-          <div className="brand-mark" aria-hidden="true">
-            <LockMark />
-          </div>
-          <p className="eyebrow">Encrypted cloud vault</p>
-          <h1>MarkBook</h1>
-          <p className="hero-copy">账号、密码、备注和链接会先加密，再跨设备同步。</p>
-          <div className="signal-row" aria-label="应用状态">
-            <span>Web Crypto</span>
-            <span>Supabase Auth</span>
-            <span>Supabase DB</span>
-            <span>Next.js Ready</span>
-          </div>
-        </div>
-
         <form className="auth-panel" onSubmit={handleAuthSubmit}>
-          <div>
-            <p className="eyebrow">{authMode === "login" ? "同步保险库" : "新保险库"}</p>
+          <div className="auth-header">
+            <div className="auth-logo" aria-hidden="true">
+              <LockMark />
+            </div>
             <h2>{authMode === "login" ? "登录账号" : "注册账号"}</h2>
+            <p>{authMode === "login" ? "使用你的账号进入 MarkBook。" : "创建账号后会生成你的加密保险库。"}</p>
           </div>
 
           <div className="mode-switch" aria-label="认证方式">
