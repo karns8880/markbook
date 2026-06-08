@@ -1,6 +1,6 @@
 # MarkBook
 
-一个网页端账号密码记录应用，使用邮箱密码认证，并把保险库密文同步到 Vercel Postgres。账号密码记录在浏览器端用 Web Crypto 加密，服务端只保存加密后的保险库 JSON。
+一个 Next.js 网页端账号密码记录应用，使用邮箱密码认证，并把保险库密文同步到 Vercel Postgres。账号密码记录在浏览器端用 Web Crypto 加密，服务端只保存加密后的保险库 JSON。
 
 ## 功能
 
@@ -25,7 +25,6 @@ export POSTGRES_URL="postgres://..."
 
 ```bash
 npm install
-npm i -g vercel
 npm run dev
 ```
 
@@ -42,8 +41,8 @@ http://localhost:4173
 3. 在 Project 的 Storage 里创建或连接 Vercel Postgres。
 4. 确认 Vercel 自动注入了 `POSTGRES_URL` 等 Postgres 环境变量。
 5. 在 Environment Variables 添加 `AUTH_SECRET`，值建议用 32 位以上随机字符串。
-6. Framework Preset 选择 `Other`。
-7. Build Command 留空。
+6. Framework Preset 选择 `Next.js`，通常 Vercel 会自动识别。
+7. Build Command 使用默认的 `next build`。
 8. Output Directory 留空。
 9. 点击 Deploy。
 

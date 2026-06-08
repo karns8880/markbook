@@ -508,6 +508,12 @@ textarea:focus {
   text-decoration: none;
 }
 
+.disabled-link {
+  color: var(--green-dark);
+  font-weight: 800;
+  opacity: 0.45;
+}
+
 .record-footer button {
   border: 0;
   background: transparent;
@@ -547,19 +553,19 @@ textarea:focus {
   height: 42px;
 }
 
-dialog {
-  width: min(720px, calc(100vw - 32px));
-  border: 0;
-  padding: 0;
-  background: transparent;
-}
-
-dialog::backdrop {
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
   background: rgba(20, 24, 22, 0.46);
   backdrop-filter: blur(8px);
+  padding: 16px;
 }
 
 .dialog-card {
+  width: min(720px, calc(100vw - 32px));
   border-radius: 22px;
   padding: 24px;
 }
