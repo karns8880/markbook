@@ -264,7 +264,7 @@ export default function Page() {
                 <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-foreground text-background">
                   <RiLockLine className="size-5" />
                 </div>
-                <CardTitle className="font-heading text-4xl font-semibold tracking-tight">
+                <CardTitle className="text-4xl font-semibold tracking-tight">
                   {mode === "login" ? "Welcome back!" : "Create account"}
                 </CardTitle>
                 <CardDescription className="text-base">
@@ -655,7 +655,7 @@ function Dashboard({
               <RiShieldKeyholeLine className="size-5" />
             </div>
             <div>
-              <h1 className="font-heading text-2xl font-semibold tracking-tight">
+              <h1 className="text-2xl font-semibold tracking-tight">
                 MarkBook
               </h1>
               <p className="text-sm text-muted-foreground">{user.email}</p>
