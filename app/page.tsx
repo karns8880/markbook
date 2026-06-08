@@ -6,6 +6,7 @@ import {
   RiEyeLine,
   RiEyeOffLine,
   RiFileCopyLine,
+  RiFolder3Line,
   RiGlobalLine,
   RiGoogleFill,
   RiLoader4Line,
@@ -27,6 +28,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { createSupabaseClient } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
@@ -42,8 +50,11 @@ type VaultItem = {
   username: string
   url: string
   updatedAt: string
+  category: string
   strength: "Strong" | "Medium" | "Weak"
 }
+
+const defaultCategories = ["Work", "Personal", "Finance"]
 
 const vaultItems: VaultItem[] = [
   {
@@ -51,6 +62,7 @@ const vaultItems: VaultItem[] = [
     username: "karns8880",
     url: "vercel.com",
     updatedAt: "Today",
+    category: "Work",
     strength: "Strong",
   },
   {
@@ -58,6 +70,7 @@ const vaultItems: VaultItem[] = [
     username: "luyis888sky",
     url: "supabase.com",
     updatedAt: "Yesterday",
+    category: "Work",
     strength: "Strong",
   },
   {
@@ -65,6 +78,7 @@ const vaultItems: VaultItem[] = [
     username: "karns8880",
     url: "github.com",
     updatedAt: "Jun 08",
+    category: "Personal",
     strength: "Medium",
   },
 ]
@@ -367,6 +381,38 @@ function Dashboard({
   email: string
   onSignOut: () => void
 }) {
+  const [categories, setCategories] = React.useState(defaultCategories)
+  const [newCategory, setNewCategory] = React.useState("")
+  const [selectedCategory, setSelectedCategory] = React.useState(
+    defaultCategories[0]
+  )
+
+  function handleCreateCategory(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const category = newCategory.trim()
+    if (!category) return
+
+    const existingCategory = categories.find(
+      (item) => item.toLowerCase() === category.toLowerCase()
+    )
+
+    if (existingCategory) {
+      setSelectedCategory(existingCategory)
+      setNewCategory("")
+      return
+    }
+
+    setCategories((current) => [...current, category])
+    setSelectedCategory(category)
+    setNewCategory("")
+  }
+
+  const categoryCounts = categories.map((category) => ({
+    name: category,
+    count: vaultItems.filter((item) => item.category === category).length,
+  }))
+
   return (
     <main className="min-h-svh bg-muted p-3 text-foreground md:p-5">
       <section className="min-h-[calc(100svh-1.5rem)] overflow-hidden rounded-3xl bg-background shadow-sm ring-1 ring-border md:min-h-[calc(100svh-2.5rem)]">
@@ -395,7 +441,57 @@ function Dashboard({
           </div>
         </header>
 
-        <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[1fr_22rem]">
+        <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[16rem_1fr_22rem]">
+          <aside className="grid content-start gap-5">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Categories</CardTitle>
+                <CardDescription>
+                  Create groups for accounts and credentials.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <form className="flex gap-2" onSubmit={handleCreateCategory}>
+                  <Input
+                    value={newCategory}
+                    onChange={(event) => setNewCategory(event.target.value)}
+                    placeholder="New category"
+                    aria-label="New category"
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    aria-label="Create category"
+                  >
+                    <RiAddLine className="size-4" />
+                  </Button>
+                </form>
+
+                <div className="grid gap-1">
+                  {categoryCounts.map((category) => (
+                    <button
+                      key={category.name}
+                      type="button"
+                      className={cn(
+                        "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                        selectedCategory === category.name
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground"
+                      )}
+                      onClick={() => setSelectedCategory(category.name)}
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <RiFolder3Line className="size-4 shrink-0" />
+                        <span className="truncate">{category.name}</span>
+                      </span>
+                      <span className="text-xs">{category.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </aside>
+
           <section className="grid gap-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -453,6 +549,29 @@ function Dashboard({
                 <Input placeholder="Website or app" />
                 <Input placeholder="Username or email" />
                 <Input placeholder="Password" type="password" />
+                <div className="grid gap-2">
+                  <Label htmlFor="credential-category">Category</Label>
+                  <Select
+                    value={selectedCategory}
+                    onValueChange={(value) => {
+                      if (value) setSelectedCategory(value)
+                    }}
+                  >
+                    <SelectTrigger
+                      id="credential-category"
+                      className="h-10 w-full"
+                    >
+                      <SelectValue placeholder="Choose category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button>
                   <RiAddLine className="size-4" />
                   Save credential
@@ -481,6 +600,10 @@ function VaultRow({ item }: { item: VaultItem }) {
               {item.username}
             </span>
             <span>{item.url}</span>
+            <span className="inline-flex items-center gap-1">
+              <RiFolder3Line className="size-3.5" />
+              {item.category}
+            </span>
             <span>Updated {item.updatedAt}</span>
           </div>
         </div>
