@@ -1,0 +1,11 @@
+{
+  "name": "markbook",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0"
+  },
+  "scripts": {
+    "dev": "vercel dev --listen 4173"
+  }
+}
