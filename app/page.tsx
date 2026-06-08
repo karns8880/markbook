@@ -13,6 +13,7 @@ import {
   RiLoader4Line,
   RiLockLine,
   RiLogoutBoxRLine,
+  RiMore2Line,
   RiSearchLine,
   RiShieldKeyholeLine,
   RiUserLine,
@@ -38,6 +39,20 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -45,7 +60,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import { createSupabaseClient } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
@@ -61,6 +75,8 @@ type VaultItem = {
   id: string
   title: string
   username: string
+  password: string
+  notes: string
   url: string
   updatedAt: string
   categoryId: string
@@ -409,15 +425,16 @@ function Dashboard({
   const [vaultItems, setVaultItems] = React.useState(defaultVaultItems)
   const [newCategory, setNewCategory] = React.useState("")
   const [selectedCategoryId, setSelectedCategoryId] = React.useState("")
-  const [credentialTitle, setCredentialTitle] = React.useState("")
   const [credentialUsername, setCredentialUsername] = React.useState("")
   const [credentialUrl, setCredentialUrl] = React.useState("")
   const [credentialPassword, setCredentialPassword] = React.useState("")
+  const [credentialNotes, setCredentialNotes] = React.useState("")
   const [dashboardError, setDashboardError] = React.useState("")
   const [dashboardStatus, setDashboardStatus] = React.useState("")
   const [loadingVault, setLoadingVault] = React.useState(true)
   const [savingCategory, setSavingCategory] = React.useState(false)
   const [savingCredential, setSavingCredential] = React.useState(false)
+  const [credentialDialogOpen, setCredentialDialogOpen] = React.useState(false)
 
   const loadVaultData = React.useCallback(async () => {
     setDashboardError("")
@@ -432,7 +449,7 @@ function Dashboard({
       supabase
         .from("vault_credentials")
         .select(
-          "id, title, username, website_url, updated_at, category_id, vault_categories(name)"
+          "id, title, username, password_encrypted, notes, website_url, updated_at, category_id, vault_categories(name)"
         )
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
@@ -468,6 +485,10 @@ function Dashboard({
         id: String(credential.id),
         title: String(credential.title),
         username: credential.username ? String(credential.username) : "",
+        password: credential.password_encrypted
+          ? String(credential.password_encrypted)
+          : "",
+        notes: credential.notes ? String(credential.notes) : "",
         url: credential.website_url ? String(credential.website_url) : "",
         updatedAt: formatUpdatedAt(String(credential.updated_at)),
         categoryId: credential.category_id
@@ -583,12 +604,13 @@ function Dashboard({
     setDashboardError("")
     setDashboardStatus("")
 
-    const title = credentialTitle.trim()
     const username = credentialUsername.trim()
     const websiteUrl = credentialUrl.trim()
     const accountPassword = credentialPassword.trim()
+    const notes = credentialNotes.trim()
+    const title = username || websiteUrl || "Credential"
 
-    if (!title || !accountPassword || !selectedCategoryId) return
+    if (!accountPassword || !selectedCategoryId) return
 
     const selectedCategory = categories.find(
       (category) => category.id === selectedCategoryId
@@ -605,8 +627,11 @@ function Dashboard({
         username,
         website_url: websiteUrl,
         password_encrypted: accountPassword,
+        notes,
       })
-      .select("id, title, username, website_url, updated_at, category_id")
+      .select(
+        "id, title, username, password_encrypted, notes, website_url, updated_at, category_id"
+      )
       .single()
 
     setSavingCredential(false)
@@ -621,6 +646,10 @@ function Dashboard({
         id: String(data.id),
         title: String(data.title),
         username: data.username ? String(data.username) : "",
+        password: data.password_encrypted
+          ? String(data.password_encrypted)
+          : "",
+        notes: data.notes ? String(data.notes) : "",
         url: data.website_url ? String(data.website_url) : "",
         updatedAt: formatUpdatedAt(String(data.updated_at)),
         categoryId: data.category_id ? String(data.category_id) : "",
@@ -629,10 +658,11 @@ function Dashboard({
       }
 
       setVaultItems((current) => [nextCredential, ...current])
-      setCredentialTitle("")
       setCredentialUsername("")
       setCredentialUrl("")
       setCredentialPassword("")
+      setCredentialNotes("")
+      setCredentialDialogOpen(false)
       setDashboardStatus("Credential saved.")
     }
   }
@@ -645,6 +675,17 @@ function Dashboard({
   const selectedCategoryName =
     categories.find((category) => category.id === selectedCategoryId)?.name ??
     ""
+
+  function handleCredentialDialogOpenChange(open: boolean) {
+    setCredentialDialogOpen(open)
+
+    if (open) {
+      setCredentialUsername("")
+      setCredentialUrl("")
+      setCredentialPassword("")
+      setCredentialNotes("")
+    }
+  }
 
   return (
     <main className="min-h-svh bg-muted p-3 text-foreground md:p-5">
@@ -663,10 +704,116 @@ function Dashboard({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button size="sm">
-              <RiAddLine className="size-4" />
-              Add password
-            </Button>
+            <Dialog
+              open={credentialDialogOpen}
+              onOpenChange={handleCredentialDialogOpenChange}
+            >
+              <DialogTrigger
+                render={
+                  <Button size="sm">
+                    <RiAddLine className="size-4" />
+                    Add password
+                  </Button>
+                }
+              />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>New credential</DialogTitle>
+                  <DialogDescription>
+                    Save account credentials to Supabase.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="grid gap-3" onSubmit={handleCreateCredential}>
+                  <Input
+                    value={credentialUrl}
+                    onChange={(event) => setCredentialUrl(event.target.value)}
+                    placeholder="URL"
+                    type="url"
+                  />
+                  <Input
+                    value={credentialUsername}
+                    onChange={(event) =>
+                      setCredentialUsername(event.target.value)
+                    }
+                    placeholder="Username or email"
+                    autoComplete="off"
+                    name="credential-username"
+                  />
+                  <Input
+                    value={credentialPassword}
+                    onChange={(event) =>
+                      setCredentialPassword(event.target.value)
+                    }
+                    placeholder="Password"
+                    type="password"
+                    autoComplete="new-password"
+                    name="credential-password"
+                    required
+                  />
+                  <textarea
+                    value={credentialNotes}
+                    onChange={(event) => setCredentialNotes(event.target.value)}
+                    placeholder="Notes"
+                    className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="credential-category">Category</Label>
+                    <Select
+                      value={selectedCategoryId}
+                      onValueChange={(value) => {
+                        if (value) setSelectedCategoryId(value)
+                      }}
+                      disabled={categories.length === 0}
+                    >
+                      <SelectTrigger
+                        id="credential-category"
+                        className="h-10 w-full"
+                      >
+                        <span
+                          className={cn(
+                            "flex flex-1 text-left",
+                            !selectedCategoryName && "text-muted-foreground"
+                          )}
+                        >
+                          {selectedCategoryName || "Choose category"}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !selectedCategoryId ||
+                      !credentialPassword.trim() ||
+                      savingCredential
+                    }
+                  >
+                    {savingCredential ? (
+                      <RiLoader4Line className="size-4 animate-spin" />
+                    ) : (
+                      <RiAddLine className="size-4" />
+                    )}
+                    Save credential
+                  </Button>
+                  {selectedCategoryName ? (
+                    <p className="text-xs text-muted-foreground">
+                      Saving into {selectedCategoryName}.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Create a category before saving credentials.
+                    </p>
+                  )}
+                </form>
+              </DialogContent>
+            </Dialog>
             <Button variant="outline" size="sm" onClick={onSignOut}>
               <RiLogoutBoxRLine className="size-4" />
               Sign out
@@ -674,7 +821,18 @@ function Dashboard({
           </div>
         </header>
 
-        <div className="grid gap-6 px-5 pt-4 pb-5 md:px-8 md:pt-5 md:pb-8 xl:grid-cols-[16rem_1fr_22rem]">
+        {dashboardError || dashboardStatus ? (
+          <div className="px-5 pt-4 md:px-8">
+            {dashboardError ? (
+              <p className="text-sm text-destructive">{dashboardError}</p>
+            ) : null}
+            {dashboardStatus ? (
+              <p className="text-sm text-muted-foreground">{dashboardStatus}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="grid gap-6 px-5 pt-4 pb-5 md:px-8 md:pt-5 md:pb-8 xl:grid-cols-[16rem_1fr]">
           <aside className="grid content-start gap-5">
             <Card>
               <CardHeader>
@@ -773,9 +931,32 @@ function Dashboard({
                 ) : null}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Security overview</CardTitle>
+                <CardDescription>
+                  Quick status for your saved credentials.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-2">
+                <Stat
+                  label="Saved accounts"
+                  value={String(vaultItems.length)}
+                />
+                <Stat label="Categories" value={String(categories.length)} />
+                <Stat
+                  label="Needs review"
+                  value={String(
+                    vaultItems.filter((item) => item.strength !== "Strong")
+                      .length
+                  )}
+                />
+              </CardContent>
+            </Card>
           </aside>
 
-          <section className="grid gap-5">
+          <section className="grid content-start gap-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight">
@@ -827,128 +1008,6 @@ function Dashboard({
               </CardContent>
             </Card>
           </section>
-
-          <aside className="grid content-start gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Security overview</CardTitle>
-                <CardDescription>
-                  Quick status for your saved credentials.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <Stat
-                  label="Saved accounts"
-                  value={String(vaultItems.length)}
-                />
-                <Stat label="Categories" value={String(categories.length)} />
-                <Stat
-                  label="Needs review"
-                  value={String(
-                    vaultItems.filter((item) => item.strength !== "Strong")
-                      .length
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">New credential</CardTitle>
-                <CardDescription>
-                  Save account credentials to Supabase.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form className="grid gap-3" onSubmit={handleCreateCredential}>
-                  <Input
-                    value={credentialTitle}
-                    onChange={(event) => setCredentialTitle(event.target.value)}
-                    placeholder="Website or app"
-                    required
-                  />
-                  <Input
-                    value={credentialUsername}
-                    onChange={(event) =>
-                      setCredentialUsername(event.target.value)
-                    }
-                    placeholder="Username or email"
-                  />
-                  <Input
-                    value={credentialUrl}
-                    onChange={(event) => setCredentialUrl(event.target.value)}
-                    placeholder="URL"
-                    type="url"
-                  />
-                  <Input
-                    value={credentialPassword}
-                    onChange={(event) =>
-                      setCredentialPassword(event.target.value)
-                    }
-                    placeholder="Password"
-                    type="password"
-                    required
-                  />
-                  <div className="grid gap-2">
-                    <Label htmlFor="credential-category">Category</Label>
-                    <Select
-                      value={selectedCategoryId}
-                      onValueChange={(value) => {
-                        if (value) setSelectedCategoryId(value)
-                      }}
-                      disabled={categories.length === 0}
-                    >
-                      <SelectTrigger
-                        id="credential-category"
-                        className="h-10 w-full"
-                      >
-                        <SelectValue placeholder="Choose category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={
-                      !selectedCategoryId ||
-                      !credentialTitle.trim() ||
-                      !credentialPassword.trim() ||
-                      savingCredential
-                    }
-                  >
-                    {savingCredential ? (
-                      <RiLoader4Line className="size-4 animate-spin" />
-                    ) : (
-                      <RiAddLine className="size-4" />
-                    )}
-                    Save credential
-                  </Button>
-                  {selectedCategoryName ? (
-                    <p className="text-xs text-muted-foreground">
-                      Saving into {selectedCategoryName}.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Create a category before saving credentials.
-                    </p>
-                  )}
-                </form>
-              </CardContent>
-            </Card>
-
-            {dashboardError ? (
-              <p className="text-sm text-destructive">{dashboardError}</p>
-            ) : null}
-            {dashboardStatus ? (
-              <p className="text-sm text-muted-foreground">{dashboardStatus}</p>
-            ) : null}
-          </aside>
         </div>
       </section>
     </main>
@@ -969,6 +1028,7 @@ function VaultRow({ item }: { item: VaultItem }) {
               <RiUserLine className="size-3.5" />
               {item.username}
             </span>
+            <span className="font-medium text-foreground">{item.password}</span>
             <span>{item.url}</span>
             <span className="inline-flex items-center gap-1">
               <RiFolder3Line className="size-3.5" />
@@ -976,6 +1036,11 @@ function VaultRow({ item }: { item: VaultItem }) {
             </span>
             <span>Updated {item.updatedAt}</span>
           </div>
+          {item.notes ? (
+            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+              {item.notes}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -990,10 +1055,42 @@ function VaultRow({ item }: { item: VaultItem }) {
         >
           {item.strength}
         </span>
-        <Button variant="outline" size="sm">
-          <RiFileCopyLine className="size-4" />
-          Copy
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="More actions"
+              >
+                <RiMore2Line className="size-4" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={!item.username}
+              onClick={() => navigator.clipboard.writeText(item.username)}
+            >
+              <RiFileCopyLine className="size-4" />
+              Copy username
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!item.password}
+              onClick={() => navigator.clipboard.writeText(item.password)}
+            >
+              <RiFileCopyLine className="size-4" />
+              Copy password
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!item.url}
+              onClick={() => navigator.clipboard.writeText(item.url)}
+            >
+              <RiFileCopyLine className="size-4" />
+              Copy URL
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </article>
   )
