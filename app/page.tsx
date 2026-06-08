@@ -674,7 +674,7 @@ function Dashboard({
           </div>
         </header>
 
-        <div className="grid gap-6 p-5 md:p-8 xl:grid-cols-[16rem_1fr_22rem]">
+        <div className="grid gap-6 px-5 pt-4 pb-5 md:px-8 md:pt-5 md:pb-8 xl:grid-cols-[16rem_1fr_22rem]">
           <aside className="grid content-start gap-5">
             <Card>
               <CardHeader>
@@ -798,7 +798,7 @@ function Dashboard({
             <Card className="overflow-hidden py-0">
               <CardContent className="p-0">
                 {loadingVault ? (
-                  <div className="grid min-h-64 place-items-center px-6 py-12 text-center text-sm text-muted-foreground">
+                  <div className="grid min-h-56 place-items-center px-6 py-10 text-center text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-2">
                       <RiLoader4Line className="size-4 animate-spin" />
                       Loading vault...
@@ -811,7 +811,7 @@ function Dashboard({
                     ))}
                   </div>
                 ) : (
-                  <div className="grid min-h-64 place-items-center px-6 py-12 text-center">
+                  <div className="grid min-h-56 place-items-center px-6 py-10 text-center">
                     <div className="grid max-w-sm gap-2">
                       <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                         <RiShieldKeyholeLine className="size-5" />
