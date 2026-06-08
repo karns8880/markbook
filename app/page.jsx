@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase";
 
 const KDF_ITERATIONS = 210000;
 const emptyRecord = {
@@ -76,20 +77,6 @@ function EmptyIcon() {
   );
 }
 
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "请求失败");
-  return data;
-}
-
 function bytesToBase64(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
@@ -157,6 +144,7 @@ function downloadJson(filename, data) {
 }
 
 export default function Home() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [authMode, setAuthMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -171,6 +159,7 @@ export default function Home() {
   const [revealedIds, setRevealedIds] = useState(new Set());
   const [toast, setToast] = useState("");
   const vaultRef = useRef({ key: null, salt: null });
+  const userRef = useRef(null);
   const toastTimer = useRef(null);
 
   const tags = useMemo(() => {
@@ -198,22 +187,27 @@ export default function Home() {
 
   async function encryptAndSave(nextRecords) {
     const { key, salt } = vaultRef.current;
+    const user = userRef.current;
+    if (!user) throw new Error("登录状态已失效");
+
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const payload = new TextEncoder().encode(JSON.stringify(nextRecords));
     const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, payload);
 
-    await api("/api/vault", {
-      method: "PUT",
-      body: JSON.stringify({
-        vault: {
-          version: 1,
-          iterations: KDF_ITERATIONS,
-          salt: bytesToBase64(salt),
-          iv: bytesToBase64(iv),
-          data: bytesToBase64(encrypted),
-        },
-      }),
+    const vault = {
+      version: 1,
+      iterations: KDF_ITERATIONS,
+      salt: bytesToBase64(salt),
+      iv: bytesToBase64(iv),
+      data: bytesToBase64(encrypted),
+    };
+
+    const { error } = await supabase.from("vaults").upsert({
+      user_id: user.id,
+      vault_json: vault,
+      updated_at: new Date().toISOString(),
     });
+    if (error) throw error;
   }
 
   async function decryptRecords(masterPassword, vault) {
@@ -251,21 +245,46 @@ export default function Home() {
     setAuthMessage("");
 
     try {
+      if (!supabase) {
+        throw new Error("缺少 Supabase 环境变量");
+      }
       if (password.length < 8) throw new Error("密码至少 8 位");
 
       if (authMode === "login") {
-        await api("/api/login", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
         });
-        const { vault } = await api("/api/vault");
-        setRecords(vault ? await decryptRecords(password, vault) : await createVault(password));
+        if (error) throw error;
+        if (!data.user) throw new Error("登录失败");
+
+        userRef.current = data.user;
+
+        const { data: vaultRow, error: vaultError } = await supabase
+          .from("vaults")
+          .select("vault_json")
+          .eq("user_id", data.user.id)
+          .maybeSingle();
+        if (vaultError) throw vaultError;
+
+        setRecords(
+          vaultRow?.vault_json
+            ? await decryptRecords(password, vaultRow.vault_json)
+            : await createVault(password),
+        );
       } else {
         if (password !== confirmPassword) throw new Error("两次输入不一致");
-        await api("/api/register", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
         });
+        if (error) throw error;
+        if (!data.session || !data.user) {
+          setAuthMessage("注册成功，请先通过邮箱确认账号，然后返回登录。");
+          return;
+        }
+
+        userRef.current = data.user;
         setRecords(await createVault(password));
       }
 
@@ -280,11 +299,12 @@ export default function Home() {
 
   async function handleLogout() {
     try {
-      await api("/api/logout", { method: "POST", body: "{}" });
+      await supabase.auth.signOut();
     } catch {
       // The local vault should still lock if the network request fails.
     }
     vaultRef.current = { key: null, salt: null };
+    userRef.current = null;
     setRecords([]);
     setQuery("");
     setSelectedTag("全部");
@@ -399,7 +419,8 @@ export default function Home() {
           <p className="hero-copy">账号、密码、备注和链接会先加密，再跨设备同步。</p>
           <div className="signal-row" aria-label="应用状态">
             <span>Web Crypto</span>
-            <span>Vercel Postgres</span>
+            <span>Supabase Auth</span>
+            <span>Supabase DB</span>
             <span>Next.js Ready</span>
           </div>
         </div>
