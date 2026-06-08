@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   RiAddLine,
+  RiDeleteBinLine,
   RiEyeLine,
   RiEyeOffLine,
   RiFileCopyLine,
@@ -408,6 +409,17 @@ function Dashboard({
     setNewCategory("")
   }
 
+  function handleDeleteCategory(category: string) {
+    if (categories.length <= 1) return
+
+    const nextCategories = categories.filter((item) => item !== category)
+    setCategories(nextCategories)
+
+    if (selectedCategory === category) {
+      setSelectedCategory(nextCategories[0])
+    }
+  }
+
   const categoryCounts = categories.map((category) => ({
     name: category,
     count: vaultItems.filter((item) => item.category === category).length,
@@ -469,23 +481,38 @@ function Dashboard({
 
                 <div className="grid gap-1">
                   {categoryCounts.map((category) => (
-                    <button
+                    <div
                       key={category.name}
-                      type="button"
                       className={cn(
-                        "flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                        "grid grid-cols-[1fr_auto] items-center gap-1 rounded-md transition-colors hover:bg-muted",
                         selectedCategory === category.name
                           ? "bg-muted text-foreground"
                           : "text-muted-foreground"
                       )}
-                      onClick={() => setSelectedCategory(category.name)}
                     >
-                      <span className="inline-flex min-w-0 items-center gap-2">
-                        <RiFolder3Line className="size-4 shrink-0" />
-                        <span className="truncate">{category.name}</span>
-                      </span>
-                      <span className="text-xs">{category.count}</span>
-                    </button>
+                      <button
+                        type="button"
+                        className="flex min-w-0 items-center justify-between gap-2 px-3 py-2 text-left text-sm"
+                        onClick={() => setSelectedCategory(category.name)}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          <RiFolder3Line className="size-4 shrink-0" />
+                          <span className="truncate">{category.name}</span>
+                        </span>
+                        <span className="text-xs">{category.count}</span>
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="mr-1 size-8 text-muted-foreground hover:text-destructive"
+                        disabled={categories.length <= 1}
+                        onClick={() => handleDeleteCategory(category.name)}
+                        aria-label={`Delete ${category.name}`}
+                      >
+                        <RiDeleteBinLine className="size-4" />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               </CardContent>
