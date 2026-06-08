@@ -18,6 +18,17 @@ import {
   RiUserLine,
 } from "@remixicon/react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -47,42 +58,23 @@ type PointerStyle = React.CSSProperties & {
 }
 
 type VaultItem = {
+  id: string
   title: string
   username: string
   url: string
   updatedAt: string
-  category: string
+  categoryId: string
+  categoryName: string
   strength: "Strong" | "Medium" | "Weak"
 }
 
-const defaultCategories = ["Work", "Personal", "Finance"]
+type Category = {
+  id: string
+  name: string
+}
 
-const vaultItems: VaultItem[] = [
-  {
-    title: "Vercel",
-    username: "karns8880",
-    url: "vercel.com",
-    updatedAt: "Today",
-    category: "Work",
-    strength: "Strong",
-  },
-  {
-    title: "Supabase",
-    username: "luyis888sky",
-    url: "supabase.com",
-    updatedAt: "Yesterday",
-    category: "Work",
-    strength: "Strong",
-  },
-  {
-    title: "GitHub",
-    username: "karns8880",
-    url: "github.com",
-    updatedAt: "Jun 08",
-    category: "Personal",
-    strength: "Medium",
-  },
-]
+const defaultCategories: Category[] = []
+const defaultVaultItems: VaultItem[] = []
 
 export default function Page() {
   const supabase = React.useMemo(() => createSupabaseClient(), [])
@@ -383,10 +375,9 @@ function Dashboard({
   onSignOut: () => void
 }) {
   const [categories, setCategories] = React.useState(defaultCategories)
+  const [vaultItems, setVaultItems] = React.useState(defaultVaultItems)
   const [newCategory, setNewCategory] = React.useState("")
-  const [selectedCategory, setSelectedCategory] = React.useState(
-    defaultCategories[0]
-  )
+  const [selectedCategoryId, setSelectedCategoryId] = React.useState("")
 
   function handleCreateCategory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -395,35 +386,45 @@ function Dashboard({
     if (!category) return
 
     const existingCategory = categories.find(
-      (item) => item.toLowerCase() === category.toLowerCase()
+      (item) => item.name.toLowerCase() === category.toLowerCase()
     )
 
     if (existingCategory) {
-      setSelectedCategory(existingCategory)
+      setSelectedCategoryId(existingCategory.id)
       setNewCategory("")
       return
     }
 
-    setCategories((current) => [...current, category])
-    setSelectedCategory(category)
+    const nextCategory = {
+      id: crypto.randomUUID(),
+      name: category,
+    }
+
+    setCategories((current) => [...current, nextCategory])
+    setSelectedCategoryId(nextCategory.id)
     setNewCategory("")
   }
 
-  function handleDeleteCategory(category: string) {
-    if (categories.length <= 1) return
-
-    const nextCategories = categories.filter((item) => item !== category)
+  function handleDeleteCategory(categoryId: string) {
+    const nextCategories = categories.filter((item) => item.id !== categoryId)
     setCategories(nextCategories)
+    setVaultItems((current) =>
+      current.filter((item) => item.categoryId !== categoryId)
+    )
 
-    if (selectedCategory === category) {
-      setSelectedCategory(nextCategories[0])
+    if (selectedCategoryId === categoryId) {
+      setSelectedCategoryId(nextCategories[0]?.id ?? "")
     }
   }
 
   const categoryCounts = categories.map((category) => ({
-    name: category,
-    count: vaultItems.filter((item) => item.category === category).length,
+    ...category,
+    count: vaultItems.filter((item) => item.categoryId === category.id).length,
   }))
+
+  const selectedCategoryName =
+    categories.find((category) => category.id === selectedCategoryId)?.name ??
+    ""
 
   return (
     <main className="min-h-svh bg-muted p-3 text-foreground md:p-5">
@@ -482,10 +483,10 @@ function Dashboard({
                 <div className="grid gap-1">
                   {categoryCounts.map((category) => (
                     <div
-                      key={category.name}
+                      key={category.id}
                       className={cn(
                         "grid grid-cols-[1fr_auto] items-center gap-1 rounded-md transition-colors hover:bg-muted",
-                        selectedCategory === category.name
+                        selectedCategoryId === category.id
                           ? "bg-muted text-foreground"
                           : "text-muted-foreground"
                       )}
@@ -493,7 +494,7 @@ function Dashboard({
                       <button
                         type="button"
                         className="flex min-w-0 items-center justify-between gap-2 px-3 py-2 text-left text-sm"
-                        onClick={() => setSelectedCategory(category.name)}
+                        onClick={() => setSelectedCategoryId(category.id)}
                       >
                         <span className="inline-flex min-w-0 items-center gap-2">
                           <RiFolder3Line className="size-4 shrink-0" />
@@ -501,20 +502,49 @@ function Dashboard({
                         </span>
                         <span className="text-xs">{category.count}</span>
                       </button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="mr-1 size-8 text-muted-foreground hover:text-destructive"
-                        disabled={categories.length <= 1}
-                        onClick={() => handleDeleteCategory(category.name)}
-                        aria-label={`Delete ${category.name}`}
-                      >
-                        <RiDeleteBinLine className="size-4" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="mr-1 size-8 text-muted-foreground hover:text-destructive"
+                              aria-label={`Delete ${category.name}`}
+                            >
+                              <RiDeleteBinLine className="size-4" />
+                            </Button>
+                          }
+                        />
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Delete {category.name}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will also delete {category.count} credential
+                              {category.count === 1 ? "" : "s"} in this
+                              category.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteCategory(category.id)}
+                            >
+                              Delete category
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   ))}
                 </div>
+                {categories.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+                    No categories yet.
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </aside>
@@ -541,11 +571,26 @@ function Dashboard({
 
             <Card className="overflow-hidden py-0">
               <CardContent className="p-0">
-                <div className="divide-y divide-border">
-                  {vaultItems.map((item) => (
-                    <VaultRow key={item.title} item={item} />
-                  ))}
-                </div>
+                {vaultItems.length > 0 ? (
+                  <div className="divide-y divide-border">
+                    {vaultItems.map((item) => (
+                      <VaultRow key={item.id} item={item} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid min-h-64 place-items-center px-6 py-12 text-center">
+                    <div className="grid max-w-sm gap-2">
+                      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <RiShieldKeyholeLine className="size-5" />
+                      </div>
+                      <h3 className="font-medium">No credentials yet</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Create a category first, then save account credentials
+                        into that category.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </section>
@@ -559,9 +604,18 @@ function Dashboard({
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
-                <Stat label="Saved accounts" value="3" />
-                <Stat label="Strong passwords" value="2" />
-                <Stat label="Needs review" value="1" />
+                <Stat
+                  label="Saved accounts"
+                  value={String(vaultItems.length)}
+                />
+                <Stat label="Categories" value={String(categories.length)} />
+                <Stat
+                  label="Needs review"
+                  value={String(
+                    vaultItems.filter((item) => item.strength !== "Strong")
+                      .length
+                  )}
+                />
               </CardContent>
             </Card>
 
@@ -579,10 +633,11 @@ function Dashboard({
                 <div className="grid gap-2">
                   <Label htmlFor="credential-category">Category</Label>
                   <Select
-                    value={selectedCategory}
+                    value={selectedCategoryId}
                     onValueChange={(value) => {
-                      if (value) setSelectedCategory(value)
+                      if (value) setSelectedCategoryId(value)
                     }}
+                    disabled={categories.length === 0}
                   >
                     <SelectTrigger
                       id="credential-category"
@@ -592,17 +647,26 @@ function Dashboard({
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <Button>
+                <Button disabled={!selectedCategoryId}>
                   <RiAddLine className="size-4" />
                   Save credential
                 </Button>
+                {selectedCategoryName ? (
+                  <p className="text-xs text-muted-foreground">
+                    Saving into {selectedCategoryName}.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Create a category before saving credentials.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </aside>
@@ -629,7 +693,7 @@ function VaultRow({ item }: { item: VaultItem }) {
             <span>{item.url}</span>
             <span className="inline-flex items-center gap-1">
               <RiFolder3Line className="size-3.5" />
-              {item.category}
+              {item.categoryName}
             </span>
             <span>Updated {item.updatedAt}</span>
           </div>
