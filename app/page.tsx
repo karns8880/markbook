@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   RiAddLine,
   RiDeleteBinLine,
+  RiEditLine,
   RiEyeLine,
   RiEyeOffLine,
   RiFileCopyLine,
@@ -445,6 +446,11 @@ function Dashboard({
   const [savingCategory, setSavingCategory] = React.useState(false)
   const [savingCredential, setSavingCredential] = React.useState(false)
   const [credentialDialogOpen, setCredentialDialogOpen] = React.useState(false)
+  const [editingCredentialId, setEditingCredentialId] = React.useState<
+    string | null
+  >(null)
+  const [credentialPendingDelete, setCredentialPendingDelete] =
+    React.useState<VaultItem | null>(null)
 
   const loadVaultData = React.useCallback(async () => {
     setDashboardError("")
@@ -608,9 +614,7 @@ function Dashboard({
     setDashboardStatus("Category and its credentials deleted.")
   }
 
-  async function handleCreateCredential(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
+  async function handleSaveCredential(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setDashboardError("")
     setDashboardStatus("")
@@ -636,18 +640,28 @@ function Dashboard({
 
     setSavingCredential(true)
 
-    const { data, error } = await supabase
-      .from("vault_credentials")
-      .insert({
-        user_id: user.id,
-        category_id: selectedCategoryId,
-        title,
-        username,
-        website_url: websiteUrl,
-        password_encrypted: accountPassword,
-        notes,
-        custom_fields: customFields,
-      })
+    const payload = {
+      category_id: selectedCategoryId,
+      title,
+      username,
+      website_url: websiteUrl,
+      password_encrypted: accountPassword,
+      notes,
+      custom_fields: customFields,
+    }
+
+    const query = editingCredentialId
+      ? supabase
+          .from("vault_credentials")
+          .update(payload)
+          .eq("user_id", user.id)
+          .eq("id", editingCredentialId)
+      : supabase.from("vault_credentials").insert({
+          ...payload,
+          user_id: user.id,
+        })
+
+    const { data, error } = await query
       .select(
         "id, title, username, password_encrypted, notes, custom_fields, website_url, updated_at, category_id"
       )
@@ -661,7 +675,8 @@ function Dashboard({
     }
 
     if (data) {
-      const nextCredential = {
+      const wasEditing = Boolean(editingCredentialId)
+      const nextCredential: VaultItem = {
         id: String(data.id),
         title: String(data.title),
         username: data.username ? String(data.username) : "",
@@ -677,14 +692,18 @@ function Dashboard({
         strength: "Strong" as const,
       }
 
-      setVaultItems((current) => [nextCredential, ...current])
-      setCredentialUsername("")
-      setCredentialUrl("")
-      setCredentialPassword("")
-      setCredentialNotes("")
-      setCredentialCustomFields([])
+      setVaultItems((current) =>
+        editingCredentialId
+          ? current.map((item) =>
+              item.id === editingCredentialId ? nextCredential : item
+            )
+          : [nextCredential, ...current]
+      )
+      resetCredentialForm()
       setCredentialDialogOpen(false)
-      setDashboardStatus("Credential saved.")
+      setDashboardStatus(
+        wasEditing ? "Credential updated." : "Credential saved."
+      )
     }
   }
 
@@ -704,12 +723,54 @@ function Dashboard({
     setCredentialDialogOpen(open)
 
     if (open) {
-      setCredentialUsername("")
-      setCredentialUrl("")
-      setCredentialPassword("")
-      setCredentialNotes("")
-      setCredentialCustomFields([])
+      resetCredentialForm()
+    } else {
+      setEditingCredentialId(null)
     }
+  }
+
+  function resetCredentialForm() {
+    setEditingCredentialId(null)
+    setCredentialUsername("")
+    setCredentialUrl("")
+    setCredentialPassword("")
+    setCredentialNotes("")
+    setCredentialCustomFields([])
+  }
+
+  function handleEditCredential(item: VaultItem) {
+    setEditingCredentialId(item.id)
+    setSelectedCategoryId(item.categoryId)
+    setCredentialUsername(item.username)
+    setCredentialUrl(item.url)
+    setCredentialPassword(item.password)
+    setCredentialNotes(item.notes)
+    setCredentialCustomFields(item.customFields)
+    setCredentialDialogOpen(true)
+  }
+
+  async function handleDeleteCredential() {
+    if (!credentialPendingDelete) return
+
+    setDashboardError("")
+    setDashboardStatus("")
+
+    const { error } = await supabase
+      .from("vault_credentials")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("id", credentialPendingDelete.id)
+
+    if (error) {
+      setDashboardError(error.message)
+      return
+    }
+
+    setVaultItems((current) =>
+      current.filter((item) => item.id !== credentialPendingDelete.id)
+    )
+    setCredentialPendingDelete(null)
+    setDashboardStatus("Credential deleted.")
   }
 
   function handleAddCustomField() {
@@ -777,12 +838,14 @@ function Dashboard({
               />
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>New credential</DialogTitle>
+                  <DialogTitle>
+                    {editingCredentialId ? "Edit credential" : "New credential"}
+                  </DialogTitle>
                   <DialogDescription>
                     Save account credentials to Supabase.
                   </DialogDescription>
                 </DialogHeader>
-                <form className="grid gap-3" onSubmit={handleCreateCredential}>
+                <form className="grid gap-3" onSubmit={handleSaveCredential}>
                   <Input
                     value={credentialUrl}
                     onChange={(event) => setCredentialUrl(event.target.value)}
@@ -921,7 +984,9 @@ function Dashboard({
                     ) : (
                       <RiAddLine className="size-4" />
                     )}
-                    Save credential
+                    {editingCredentialId
+                      ? "Update credential"
+                      : "Save credential"}
                   </Button>
                   {selectedCategoryName ? (
                     <p className="text-xs text-muted-foreground">
@@ -953,7 +1018,7 @@ function Dashboard({
           </div>
         ) : null}
 
-        <div className="grid gap-6 px-5 pt-4 pb-5 md:px-8 md:pt-5 md:pb-8 xl:grid-cols-[16rem_1fr]">
+        <div className="grid min-h-0 gap-6 px-5 pt-4 pb-5 md:px-8 md:pt-5 md:pb-8 xl:grid-cols-[16rem_1fr]">
           <aside className="grid content-start gap-5">
             <Card>
               <CardHeader>
@@ -1077,7 +1142,7 @@ function Dashboard({
             </Card>
           </aside>
 
-          <section className="grid content-start gap-5">
+          <section className="grid min-h-0 content-start gap-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight">
@@ -1097,8 +1162,8 @@ function Dashboard({
               </div>
             </div>
 
-            <Card className="overflow-hidden py-0">
-              <CardContent className="p-0">
+            <Card className="min-h-0 overflow-hidden py-0">
+              <CardContent className="max-h-[calc(100svh-15rem)] overflow-y-auto p-0">
                 {loadingVault ? (
                   <div className="grid min-h-56 place-items-center px-6 py-10 text-center text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-2">
@@ -1109,7 +1174,12 @@ function Dashboard({
                 ) : visibleVaultItems.length > 0 ? (
                   <div className="divide-y divide-border">
                     {visibleVaultItems.map((item) => (
-                      <VaultRow key={item.id} item={item} />
+                      <VaultRow
+                        key={item.id}
+                        item={item}
+                        onEdit={handleEditCredential}
+                        onRequestDelete={setCredentialPendingDelete}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -1131,12 +1201,43 @@ function Dashboard({
             </Card>
           </section>
         </div>
+        <AlertDialog
+          open={Boolean(credentialPendingDelete)}
+          onOpenChange={(open) => {
+            if (!open) setCredentialPendingDelete(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Delete {credentialPendingDelete?.title}?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This credential will be permanently removed from Supabase.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteCredential}>
+                Delete credential
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </section>
     </main>
   )
 }
 
-function VaultRow({ item }: { item: VaultItem }) {
+function VaultRow({
+  item,
+  onEdit,
+  onRequestDelete,
+}: {
+  item: VaultItem
+  onEdit: (item: VaultItem) => void
+  onRequestDelete: (item: VaultItem) => void
+}) {
   return (
     <article className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-start md:p-5">
       <div className="flex min-w-0 items-start gap-3">
@@ -1214,6 +1315,17 @@ function VaultRow({ item }: { item: VaultItem }) {
             >
               <RiFileCopyLine className="size-4" />
               Copy URL
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit(item)}>
+              <RiEditLine className="size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => onRequestDelete(item)}
+            >
+              <RiDeleteBinLine className="size-4" />
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
