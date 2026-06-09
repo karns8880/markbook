@@ -812,8 +812,12 @@ function Dashboard({
       <section className="min-h-[calc(100svh-1.5rem)] overflow-hidden rounded-3xl bg-background shadow-sm ring-1 ring-border md:min-h-[calc(100svh-2.5rem)]">
         <header className="flex flex-col gap-4 border-b border-border px-5 py-5 md:flex-row md:items-center md:justify-between md:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-full bg-foreground text-background">
-              <RiShieldKeyholeLine className="size-5" />
+            <div className="flex size-11 items-center justify-center overflow-hidden rounded-full bg-foreground">
+              <img
+                src="/markbook-logo.png"
+                alt="MarkBook logo"
+                className="size-full object-cover"
+              />
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">
@@ -1238,12 +1242,17 @@ function VaultRow({
   onEdit: (item: VaultItem) => void
   onRequestDelete: (item: VaultItem) => void
 }) {
+  const faviconUrl = getFaviconUrl(item.url)
+  const brandFallback = getBrandFallback(item)
+
   return (
     <article className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-start md:p-5">
       <div className="flex min-w-0 items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          <RiGlobalLine className="size-5" />
-        </div>
+        <SiteIcon
+          title={item.title}
+          faviconUrl={faviconUrl}
+          brandFallback={brandFallback}
+        />
         <div className="grid min-w-0 gap-3">
           <div>
             <h3 className="truncate font-medium">{item.title}</h3>
@@ -1367,6 +1376,233 @@ function Stat({ label, value }: { label: string; value: string }) {
       <span className="font-semibold">{value}</span>
     </div>
   )
+}
+
+function SiteIcon({
+  title,
+  faviconUrl,
+  brandFallback,
+}: {
+  title: string
+  faviconUrl: string | null
+  brandFallback: BrandFallback | null
+}) {
+  const [failed, setFailed] = React.useState(false)
+  const showImage = faviconUrl && !failed
+  const fallbackLines = brandFallback
+    ? getIconLabelLines(brandFallback.label)
+    : []
+  const fallbackText = fallbackLines.join("\n")
+
+  React.useEffect(() => {
+    setFailed(false)
+  }, [faviconUrl])
+
+  return (
+    <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+      {showImage ? (
+        <img
+          src={faviconUrl}
+          alt={`${title} logo`}
+          className="size-6 object-contain"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : brandFallback ? (
+        <span
+          className={cn(
+            "flex size-full items-center justify-center px-1 text-center leading-none font-semibold whitespace-pre-line",
+            fallbackText.length > 7 ? "text-[10px]" : "text-[11px]",
+            brandFallback.className
+          )}
+          title={brandFallback.label}
+        >
+          {fallbackText}
+        </span>
+      ) : (
+        <RiGlobalLine className="size-5" />
+      )}
+    </div>
+  )
+}
+
+function getIconLabelLines(value: string) {
+  const words = value.trim().split(/\s+/).filter(Boolean)
+
+  if (words.length >= 2) {
+    return words.slice(0, 2).map((word) => truncateIconWord(word))
+  }
+
+  const [word = ""] = words
+
+  if (word.length <= 6) {
+    return [word]
+  }
+
+  return [word.slice(0, 6), word.slice(6, 12)].filter(Boolean)
+}
+
+function truncateIconWord(value: string) {
+  return value.length > 6 ? value.slice(0, 6) : value
+}
+
+type BrandFallback = {
+  label: string
+  className: string
+}
+
+function getBrandFallback(item: VaultItem) {
+  const label = getBrandLabel(item)
+
+  if (!label) {
+    return null
+  }
+
+  return {
+    label,
+    className: "bg-foreground text-background",
+  }
+}
+
+function getFaviconUrl(value: string) {
+  const domain = getUrlDomain(value)
+
+  if (!domain) {
+    return null
+  }
+
+  if (shouldUseBrandFallbackForDomain(domain)) {
+    return null
+  }
+
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`
+}
+
+function shouldUseBrandFallbackForDomain(domain: string) {
+  const labels = domain.split(".").filter(Boolean)
+
+  if (labels.length < 3) {
+    return false
+  }
+
+  const subdomainLabels = labels.slice(0, -2)
+
+  return subdomainLabels.some((label) => isMeaningfulDomainLabel(label))
+}
+
+function getBrandLabel(item: VaultItem) {
+  const domain = getUrlDomain(item.url)
+  const fromDomain = getBrandLabelFromDomain(domain)
+
+  if (fromDomain) {
+    return fromDomain
+  }
+
+  return getBrandLabelFromText(item.title || item.username || item.notes)
+}
+
+function getBrandLabelFromDomain(domain: string) {
+  if (!domain) {
+    return ""
+  }
+
+  const labels = domain.split(".").filter(Boolean)
+  const knownBrand = labels.find((label) =>
+    ["amazon", "aws", "google", "github", "vercel", "supabase"].includes(label)
+  )
+
+  if (knownBrand) {
+    return knownBrand === "aws" ? "AWS" : prettifyBrandLabel(knownBrand)
+  }
+
+  const meaningfulLabel = labels.find((label) => isMeaningfulDomainLabel(label))
+
+  return meaningfulLabel ? prettifyBrandLabel(meaningfulLabel) : ""
+}
+
+function getBrandLabelFromText(value: string) {
+  const words = value.trim().split(/\s+/).filter(Boolean)
+
+  return words[0] ? prettifyBrandLabel(words[0]) : ""
+}
+
+function isMeaningfulDomainLabel(label: string) {
+  const normalized = label.toLowerCase()
+
+  if (
+    [
+      "www",
+      "m",
+      "app",
+      "apps",
+      "admin",
+      "api",
+      "auth",
+      "console",
+      "dashboard",
+      "login",
+      "signin",
+      "sign-in",
+      "sso",
+      "secure",
+      "account",
+      "accounts",
+    ].includes(normalized)
+  ) {
+    return false
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return false
+  }
+
+  if (/^[a-z]{2}-[a-z]+-\d+$/.test(normalized)) {
+    return false
+  }
+
+  if (/^[a-z0-9]{12,}$/.test(normalized) && /\d/.test(normalized)) {
+    return false
+  }
+
+  return true
+}
+
+function prettifyBrandLabel(value: string) {
+  const normalized = value.replace(/[-_]+/g, " ").trim()
+
+  if (!normalized) {
+    return ""
+  }
+
+  if (normalized.length <= 3) {
+    return normalized.toUpperCase()
+  }
+
+  return normalized
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ")
+}
+
+function getUrlDomain(value: string) {
+  const rawValue = value.trim()
+
+  if (!rawValue) {
+    return ""
+  }
+
+  try {
+    const url = new URL(
+      rawValue.startsWith("http://") || rawValue.startsWith("https://")
+        ? rawValue
+        : `https://${rawValue}`
+    )
+
+    return url.hostname.replace(/^www\./, "")
+  } catch {
+    return ""
+  }
 }
 
 function formatUpdatedAt(value: string) {
