@@ -81,7 +81,14 @@ type VaultItem = {
   updatedAt: string
   categoryId: string
   categoryName: string
+  customFields: CustomField[]
   strength: "Strong" | "Medium" | "Weak"
+}
+
+type CustomField = {
+  id: string
+  label: string
+  value: string
 }
 
 type Category = {
@@ -429,6 +436,9 @@ function Dashboard({
   const [credentialUrl, setCredentialUrl] = React.useState("")
   const [credentialPassword, setCredentialPassword] = React.useState("")
   const [credentialNotes, setCredentialNotes] = React.useState("")
+  const [credentialCustomFields, setCredentialCustomFields] = React.useState<
+    CustomField[]
+  >([])
   const [dashboardError, setDashboardError] = React.useState("")
   const [dashboardStatus, setDashboardStatus] = React.useState("")
   const [loadingVault, setLoadingVault] = React.useState(true)
@@ -449,7 +459,7 @@ function Dashboard({
       supabase
         .from("vault_credentials")
         .select(
-          "id, title, username, password_encrypted, notes, website_url, updated_at, category_id, vault_categories(name)"
+          "id, title, username, password_encrypted, notes, custom_fields, website_url, updated_at, category_id, vault_categories(name)"
         )
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
@@ -495,6 +505,7 @@ function Dashboard({
           ? String(credential.category_id)
           : "",
         categoryName: categoryName ?? "Uncategorized",
+        customFields: parseCustomFields(credential.custom_fields),
         strength: "Strong" as const,
       }
     })
@@ -609,6 +620,13 @@ function Dashboard({
     const accountPassword = credentialPassword.trim()
     const notes = credentialNotes.trim()
     const title = username || websiteUrl || "Credential"
+    const customFields = credentialCustomFields
+      .map((field) => ({
+        id: field.id,
+        label: field.label.trim(),
+        value: field.value.trim(),
+      }))
+      .filter((field) => field.label || field.value)
 
     if (!accountPassword || !selectedCategoryId) return
 
@@ -628,9 +646,10 @@ function Dashboard({
         website_url: websiteUrl,
         password_encrypted: accountPassword,
         notes,
+        custom_fields: customFields,
       })
       .select(
-        "id, title, username, password_encrypted, notes, website_url, updated_at, category_id"
+        "id, title, username, password_encrypted, notes, custom_fields, website_url, updated_at, category_id"
       )
       .single()
 
@@ -654,6 +673,7 @@ function Dashboard({
         updatedAt: formatUpdatedAt(String(data.updated_at)),
         categoryId: data.category_id ? String(data.category_id) : "",
         categoryName: selectedCategory?.name ?? "Uncategorized",
+        customFields: parseCustomFields(data.custom_fields),
         strength: "Strong" as const,
       }
 
@@ -662,6 +682,7 @@ function Dashboard({
       setCredentialUrl("")
       setCredentialPassword("")
       setCredentialNotes("")
+      setCredentialCustomFields([])
       setCredentialDialogOpen(false)
       setDashboardStatus("Credential saved.")
     }
@@ -687,7 +708,42 @@ function Dashboard({
       setCredentialUrl("")
       setCredentialPassword("")
       setCredentialNotes("")
+      setCredentialCustomFields([])
     }
+  }
+
+  function handleAddCustomField() {
+    setCredentialCustomFields((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        label: "",
+        value: "",
+      },
+    ])
+  }
+
+  function handleUpdateCustomField(
+    id: string,
+    key: "label" | "value",
+    value: string
+  ) {
+    setCredentialCustomFields((current) =>
+      current.map((field) =>
+        field.id === id
+          ? {
+              ...field,
+              [key]: value,
+            }
+          : field
+      )
+    )
+  }
+
+  function handleRemoveCustomField(id: string) {
+    setCredentialCustomFields((current) =>
+      current.filter((field) => field.id !== id)
+    )
   }
 
   return (
@@ -759,6 +815,68 @@ function Dashboard({
                     placeholder="Notes"
                     className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
                   />
+                  <div className="grid gap-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Custom fields</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddCustomField}
+                      >
+                        <RiAddLine className="size-4" />
+                        Add field
+                      </Button>
+                    </div>
+                    {credentialCustomFields.length > 0 ? (
+                      <div className="grid gap-2">
+                        {credentialCustomFields.map((field) => (
+                          <div
+                            key={field.id}
+                            className="grid grid-cols-[1fr_1fr_auto] gap-2"
+                          >
+                            <Input
+                              value={field.label}
+                              onChange={(event) =>
+                                handleUpdateCustomField(
+                                  field.id,
+                                  "label",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Field name"
+                            />
+                            <Input
+                              value={field.value}
+                              onChange={(event) =>
+                                handleUpdateCustomField(
+                                  field.id,
+                                  "value",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Value"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRemoveCustomField(field.id)}
+                              aria-label="Remove custom field"
+                            >
+                              <RiDeleteBinLine className="size-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Add fields like recovery email, PIN, token, or security
+                        question.
+                      </p>
+                    )}
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="credential-category">Category</Label>
                     <Select
@@ -1020,31 +1138,35 @@ function Dashboard({
 
 function VaultRow({ item }: { item: VaultItem }) {
   return (
-    <article className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
-      <div className="flex min-w-0 items-center gap-3">
+    <article className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-start md:p-5">
+      <div className="flex min-w-0 items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <RiGlobalLine className="size-5" />
         </div>
-        <div className="min-w-0">
-          <h3 className="truncate font-medium">{item.title}</h3>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <RiUserLine className="size-3.5" />
-              {item.username}
-            </span>
-            <span className="font-medium text-foreground">{item.password}</span>
-            <span>{item.url}</span>
-            <span className="inline-flex items-center gap-1">
-              <RiFolder3Line className="size-3.5" />
-              {item.categoryName}
-            </span>
-            <span>Updated {item.updatedAt}</span>
+        <div className="grid min-w-0 gap-3">
+          <div>
+            <h3 className="truncate font-medium">{item.title}</h3>
+            {item.notes ? (
+              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                {item.notes}
+              </p>
+            ) : null}
           </div>
-          {item.notes ? (
-            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-              {item.notes}
-            </p>
-          ) : null}
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <DetailItem label="Username" value={item.username} />
+            <DetailItem label="Password" value={item.password} isSecret />
+            <DetailItem label="URL" value={item.url} />
+            <DetailItem label="Category" value={item.categoryName} />
+            <DetailItem label="Updated" value={item.updatedAt} />
+            {item.customFields.map((field) => (
+              <DetailItem
+                key={field.id}
+                label={field.label || "Custom field"}
+                value={field.value}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1100,6 +1222,32 @@ function VaultRow({ item }: { item: VaultItem }) {
   )
 }
 
+function DetailItem({
+  label,
+  value,
+  isSecret,
+}: {
+  label: string
+  value: string
+  isSecret?: boolean
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-muted/35 px-3 py-2">
+      <div className="text-[11px] font-medium text-muted-foreground uppercase">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 truncate text-sm",
+          isSecret ? "font-semibold text-foreground" : "text-foreground"
+        )}
+      >
+        {value || "-"}
+      </div>
+    </div>
+  )
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
@@ -1120,6 +1268,38 @@ function formatUpdatedAt(value: string) {
     month: "short",
     day: "2-digit",
   }).format(date)
+}
+
+function parseCustomFields(value: unknown): CustomField[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((field, index) => {
+      if (!field || typeof field !== "object") {
+        return null
+      }
+
+      const data = field as {
+        id?: unknown
+        label?: unknown
+        value?: unknown
+      }
+      const label = typeof data.label === "string" ? data.label : ""
+      const fieldValue = typeof data.value === "string" ? data.value : ""
+
+      if (!label && !fieldValue) {
+        return null
+      }
+
+      return {
+        id: typeof data.id === "string" ? data.id : `custom-${index}`,
+        label,
+        value: fieldValue,
+      }
+    })
+    .filter((field): field is CustomField => field !== null)
 }
 
 function AnimatedCharacters() {
